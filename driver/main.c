@@ -88,36 +88,54 @@ MODULE_VERSION(JAILHOUSE_VERSION);
 
 extern char __hyp_stub_vectors[];
 
+// 定义一个结构体console_state，用于存储控制台的状态
 struct console_state {
+	// 控制台的头部
 	unsigned int head;
+	// 上一个控制台的ID
 	unsigned int last_console_id;
 };
 
+// 定义一个互斥锁jailhouse_lock
 DEFINE_MUTEX(jailhouse_lock);
+// 定义一个布尔变量jailhouse_enabled，用于表示jailhouse是否启用
 bool jailhouse_enabled;
+// 定义一个void指针hypervisor_mem，用于存储hypervisor的地址
 void *hypervisor_mem;
 
+// 定义一个结构体设备jailhouse_dev
 static struct device *jailhouse_dev;
-static unsigned long hv_core_and_percpu_size;
+// 定义一个无符号长整型hv_core_and_percpu_size，用于存储core和percpu的大小
+unsigned long hv_core_and_percpu_size;
+// 定义一个原子变量call_done，用于表示调用是否完成
 static atomic_t call_done;
+// 定义一个整型error_code，用于存储错误码
 static int error_code;
+// 定义一个volatile指针console_page，用于存储控制台的页面
 static struct jailhouse_virt_console* volatile console_page;
+// 定义一个布尔变量console_available，用于表示控制台是否可用
 static bool console_available;
+// 定义一个resource指针hypervisor_mem_res，用于存储hypervisor的内存资源
 static struct resource *hypervisor_mem_res;
 
+// 定义一个类型为ioremap_page_range的指针ioremap_page_range_sym，用于映射页面范围
 static typeof(ioremap_page_range) *ioremap_page_range_sym;
+// 定义一个条件编译指令，用于判断是否为x86架构
 #ifdef CONFIG_X86
+// 定义一个条件编译指令，用于判断内核版本是否小于5.3.0
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,3,0)
+// 定义一个lapic_timer_period的指针lapic_timer_period_sym，用于存储lapic定时器的周期
 #define lapic_timer_period	lapic_timer_frequency
 #define lapic_timer_period_sym	lapic_timer_frequency_sym
 #endif
+// 定义一个类型为lapic_timer_period的指针lapic_timer_period_sym，用于存储lapic定时器的周期
 static typeof(lapic_timer_period) *lapic_timer_period_sym;
-#endif
+// 定义一个条件编译指令，用于判断是否为arm架构
 #ifdef CONFIG_ARM
-static typeof(__boot_cpu_mode) *__boot_cpu_mode_sym;
+// 定义一个类型为__boot_cpu_mode的指针__boot_cpu_mode_sym，用于存储__boot_cpu_mode
 #endif
 #if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
-static typeof(__hyp_stub_vectors) *__hyp_stub_vectors_sym;
+// 定义一个类型为__hyp_stub_vectors的指针__hyp_stub_vectors_sym，用于存储__hyp_stub_vectors
 #endif
 
 /* last_console contains three members:
@@ -133,70 +151,89 @@ static typeof(__hyp_stub_vectors) *__hyp_stub_vectors_sym;
  * unmapped.
  */
 static struct {
+	// 表示内容是否有效
 	bool valid;
+	// 表示消费者是否已经消费了内容
 	unsigned int id;
+	// 表示实际的页面内容
 	struct jailhouse_virt_console page;
 } last_console;
 
+// 定义jailhouse_use_vmcall变量，并根据CONFIG_X86的值进行初始化
 #ifdef CONFIG_X86
 bool jailhouse_use_vmcall;
 
+// 初始化hypercall函数
 static void init_hypercall(void)
 {
+	// 判断CPU是否支持VMX特性
 	jailhouse_use_vmcall = boot_cpu_has(X86_FEATURE_VMX);
 }
 #else /* !CONFIG_X86 */
+// 初始化hypercall函数
 static void init_hypercall(void)
 {
+	// 空操作
 }
 #endif
 
+// 复制console_page到dst
 static void copy_console_page(struct jailhouse_virt_console *dst)
 {
 	unsigned int tail;
 
 	do {
-		/* spin while hypervisor is writing to console */
+		/* 循环，直到hypervisor写入console结束 */
 		while (console_page->busy)
 			cpu_relax();
 		tail = console_page->tail;
 		rmb();
 
-		/* copy console page */
+		/* 复制console_page */
 		memcpy(dst, console_page,
 		       sizeof(struct jailhouse_virt_console));
 		rmb();
 	} while (console_page->tail != tail || console_page->busy);
 }
 
+// 更新last_console
 static inline void update_last_console(void)
 {
 	if (!console_available)
 		return;
 
+	// 复制console_page到last_console
 	copy_console_page(&last_console.page);
 	last_console.id++;
 	last_console.valid = true;
 }
 
+// 获取最大CPU数量
 static long get_max_cpus(u32 cpu_set_size,
 			 const struct jailhouse_system __user *system_config)
 {
+	// 获取CPU集合
 	u8 __user *cpu_set =
 		(u8 __user *)jailhouse_cell_cpu_set(
 				(const struct jailhouse_cell_desc * __force)
 				&system_config->root_cell);
+	// 获取CPU集合大小
 	unsigned int pos = cpu_set_size;
 	long max_cpu_id;
 	u8 bitmap;
 
+	// 遍历CPU集合
 	while (pos-- > 0) {
+		// 获取当前CPU位图
 		if (get_user(bitmap, cpu_set + pos))
 			return -EFAULT;
+		// 获取CPU集合中最大CPUID
 		max_cpu_id = fls(bitmap);
+		// 如果最大CPUID大于0，则返回最大CPU数量
 		if (max_cpu_id > 0)
 			return pos * 8 + max_cpu_id;
 	}
+	// 如果遍历完CPU集合，没有找到最大CPUID，则返回-EINVAL
 	return -EINVAL;
 }
 
@@ -206,22 +243,30 @@ static long get_max_cpus(u32 cpu_set_size,
 			     __builtin_return_address(0))
 #endif
 
+// 声明函数
 void *jailhouse_ioremap(phys_addr_t phys, unsigned long virt,
 			unsigned long size)
 {
+	// 定义一个vm_struct结构体指针
 	struct vm_struct *vma;
 
+	// 将size调整为PAGE_ALIGN
 	size = PAGE_ALIGN(size);
+	// 如果virt不为0，则调用__get_vm_area函数获取vm_area
 	if (virt)
 		vma = __get_vm_area(size, VM_IOREMAP, virt,
 				    virt + size + PAGE_SIZE);
+	// 否则调用__get_vm_area函数获取vm_area
 	else
 		vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START,
 				    VMALLOC_END);
+	// 如果vm_area为空，则返回NULL
 	if (!vma)
 		return NULL;
+	// 将phys_addr赋值给vm_area
 	vma->phys_addr = phys;
 
+	// 如果ioremap_page_range_sym函数调用失败，则调用vunmap函数释放vm_area，返回NULL
 	if (ioremap_page_range_sym((unsigned long)vma->addr,
 				   (unsigned long)vma->addr + size, phys,
 				   PAGE_KERNEL_EXEC)) {
@@ -229,43 +274,58 @@ void *jailhouse_ioremap(phys_addr_t phys, unsigned long virt,
 		return NULL;
 	}
 
+	// 返回vm_area的地址
 	return vma->addr;
 }
-
 /*
  * Called for each cpu by the JAILHOUSE_ENABLE ioctl.
  * It jumps to the entry point set in the header, reports the result and
  * signals completion to the main thread that invoked it.
  */
+// 声明函数
+static void enter_hypervisor(void *info);
+
+// 定义函数
 static void enter_hypervisor(void *info)
 {
+	// 获取jailhouse头部
 	struct jailhouse_header *header = info;
+	// 获取当前cpu
 	unsigned int cpu = smp_processor_id();
+	// 获取入口地址
 	int (*entry)(unsigned int);
+	// 定义错误码
 	int err;
 
+	// 获取入口地址
 	entry = header->entry + (unsigned long) hypervisor_mem;
 
+	// 判断cpu是否小于最大cpu数量
 	if (cpu < header->max_cpus)
 		/* either returns 0 or the same error code across all CPUs */
 		err = entry(cpu);
 	else
 		err = -EINVAL;
 
+	// 判断错误码是否大于0
 	if (err)
+		// 更新错误码
 		error_code = err;
 
 #if defined(CONFIG_X86) && LINUX_VERSION_CODE >= KERNEL_VERSION(4,0,0)
 	/* on Intel, VMXE is now on - update the shadow */
 	if (boot_cpu_has(X86_FEATURE_VMX) && !err) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,5,0)
+		// 设置cr4寄存器的VMXE位
 		cr4_set_bits_irqsoff(X86_CR4_VMXE);
 #else
+		// 设置cr4寄存器的VMXE位
 		cr4_set_bits(X86_CR4_VMXE);
 #endif
 	}
 #endif
 
+	// 原子递增
 	atomic_inc(&call_done);
 }
 
@@ -282,6 +342,16 @@ static inline const char * jailhouse_get_fw_name(void)
 #endif
 }
 
+/*
+ * Copy console data to the destination buffer
+ *
+ * @console: pointer to the console struct
+ * @dst: pointer to the destination buffer
+ * @head: current head position in the console buffer
+ * @miss: pointer to the number of missed bytes (if not NULL)
+ *
+ * Return: number of bytes copied to the destination buffer
+ */
 static int __jailhouse_console_dump_delta(struct jailhouse_virt_console
 						*console,
 					  char *dst, unsigned int head,
@@ -321,43 +391,56 @@ static int __jailhouse_console_dump_delta(struct jailhouse_virt_console
 	return ret;
 }
 
+// 静态函数：释放jailhouse固件的内存
 static void jailhouse_firmware_free(void)
 {
+	// 退出jailhouse的sysfs核心
 	jailhouse_sysfs_core_exit(jailhouse_dev);
+	// 如果存在hypervisor的内存资源，则释放
 	if (hypervisor_mem_res) {
+		// 释放指定的内存区域
 		release_mem_region(hypervisor_mem_res->start,
 				   resource_size(hypervisor_mem_res));
 		hypervisor_mem_res = NULL;
 	}
+	// 取消映射hypervisor内存
 	vunmap(hypervisor_mem);
 	hypervisor_mem = NULL;
 }
 
+// 函数：将控制台delta信息写入dst
 int jailhouse_console_dump_delta(char *dst, unsigned int head,
 				 unsigned int *miss)
 {
 	int ret;
 	struct jailhouse_virt_console *console;
 
+	// 如果jailhouse未启用，则返回-EAGAIN
 	if (!jailhouse_enabled)
 		return -EAGAIN;
 
+	// 如果控制台不可用，则返回-EPERM
 	if (!console_available)
 		return -EPERM;
 
+	// 分配内存
 	console = kmalloc(sizeof(struct jailhouse_virt_console), GFP_KERNEL);
 	if (console == NULL)
 		return -ENOMEM;
 
+	// 复制控制台页面
 	copy_console_page(console);
+	// 如果tail等于head，则直接返回0
 	if (console->tail == head) {
 		ret = 0;
 		goto console_free_out;
 	}
 
+	// 调用__jailhouse_console_dump_delta函数，将delta信息写入dst
 	ret = __jailhouse_console_dump_delta(console, dst, head, miss);
 
 console_free_out:
+	// 释放内存
 	kfree(console);
 	return ret;
 }
@@ -378,45 +461,57 @@ static int jailhouse_cmd_enable(struct jailhouse_system __user *arg)
 	long max_cpus;
 	int err;
 
+	//获取jailhouse固件名称
 	fw_name = jailhouse_get_fw_name();
 	if (!fw_name) {
 		pr_err("jailhouse: Missing or unsupported HVM technology\n");
 		return -ENODEV;
 	}
 
+	// 获取jailhouse系统配置
 	if (copy_from_user(&config_header, arg, sizeof(config_header)))
 		return -EFAULT;
 
+	// 检查签名
 	if (memcmp(config_header.signature, JAILHOUSE_SYSTEM_SIGNATURE,
 		   sizeof(config_header.signature)) != 0) {
 		pr_err("jailhouse: Not a system configuration\n");
 		return -EINVAL;
 	}
+
+	// 检查版本号
 	if (config_header.revision != JAILHOUSE_CONFIG_REVISION) {
 		pr_err("jailhouse: Configuration revision mismatch\n");
 		return -EINVAL;
 	}
+
+	// 检查架构
 	if (config_header.architecture != JAILHOUSE_ARCHITECTURE) {
 		pr_err("jailhouse: Configuration architecture mismatch\n");
 		return -EINVAL;
 	}
 
+	// 检查cell名称
 	config_header.root_cell.name[JAILHOUSE_CELL_NAME_MAXLEN] = 0;
 
+	// 获取cpu数量
 	max_cpus = get_max_cpus(config_header.root_cell.cpu_set_size, arg);
 	if (max_cpus < 0)
 		return max_cpus;
 	if (max_cpus > UINT_MAX)
 		return -EINVAL;
 
+	//检查现在是否上锁
 	if (mutex_lock_interruptible(&jailhouse_lock) != 0)
 		return -EINTR;
 
+	// 检查是否已经启用
 	err = -EBUSY;
 	if (jailhouse_enabled || !try_module_get(THIS_MODULE))
 		goto error_unlock;
 
 #ifdef CONFIG_ARM
+	// 检查是否支持HYP模式
 	/* open-coded is_hyp_mode_available to use __boot_cpu_mode_sym */
 	if ((*__boot_cpu_mode_sym & MODE_MASK) != HYP_MODE ||
 	    (*__boot_cpu_mode_sym) & BOOT_CPU_MODE_MISMATCH) {
@@ -438,6 +533,7 @@ static int jailhouse_cmd_enable(struct jailhouse_system __user *arg)
 	}
 #endif
 
+	//从jailhouse.bin中读取相应的配置
 	/* Load hypervisor image */
 	err = request_firmware(&hypervisor, fw_name, jailhouse_dev);
 	if (err) {
@@ -445,6 +541,21 @@ static int jailhouse_cmd_enable(struct jailhouse_system __user *arg)
 		goto error_put_module;
 	}
 
+	/*
+	struct jailhouse_header {
+	char signature[8];
+	unsigned long core_size;
+	unsigned long percpu_size;
+	int (*entry)(unsigned int);
+	unsigned long console_page;
+	void *gcov_info_head;
+	unsigned int max_cpus;
+	unsigned int online_cpus;
+	void *debug_console_base;
+
+	unsigned long long arm_linux_hyp_vectors;
+	unsigned int arm_linux_hyp_abi;
+};*/
 	header = (struct jailhouse_header *)hypervisor->data;
 
 	err = -EINVAL;
@@ -919,6 +1030,7 @@ static struct notifier_block jailhouse_shutdown_nb = {
 	.notifier_call = jailhouse_shutdown_notify,
 };
 
+// 静态初始化函数，用于初始化jailhouse
 static int __init jailhouse_init(void)
 {
 	int err;
@@ -934,6 +1046,7 @@ static int __init jailhouse_init(void)
 #endif
 #define RESOLVE_EXTERNAL_SYMBOL(symbol...) __RESOLVE_EXTERNAL_SYMBOL(symbol)
 
+	// 解析外部符号
 	RESOLVE_EXTERNAL_SYMBOL(ioremap_page_range);
 #ifdef CONFIG_X86
 	RESOLVE_EXTERNAL_SYMBOL(lapic_timer_period);
@@ -945,34 +1058,43 @@ static int __init jailhouse_init(void)
 	RESOLVE_EXTERNAL_SYMBOL(__hyp_stub_vectors);
 #endif
 
+	// 注册根设备
 	jailhouse_dev = root_device_register("jailhouse");
 	if (IS_ERR(jailhouse_dev))
 		return PTR_ERR(jailhouse_dev);
 
+	// 初始化sysfs
 	err = jailhouse_sysfs_init(jailhouse_dev);
 	if (err)
 		goto unreg_dev;
 
+	// 注册misc设备
 	err = misc_register(&jailhouse_misc_dev);
 	if (err)
 		goto exit_sysfs;
 
+	// 注册pci设备
 	err = jailhouse_pci_register();
 	if (err)
 		goto exit_misc;
 
+	// 注册重启通知
 	register_reboot_notifier(&jailhouse_shutdown_nb);
 
+	// 初始化hypercall
 	init_hypercall();
 
 	return 0;
 exit_misc:
+	// 注销misc设备
 	misc_deregister(&jailhouse_misc_dev);
 
 exit_sysfs:
+	// 退出sysfs
 	jailhouse_sysfs_exit(jailhouse_dev);
 
 unreg_dev:
+	// 注销根设备
 	root_device_unregister(jailhouse_dev);
 	return err;
 }

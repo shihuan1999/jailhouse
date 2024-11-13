@@ -57,6 +57,7 @@ struct jailhouse_comm_region {
 	__u32 vpci_irq_base;
 } __attribute__((packed));
 
+// 调用Jailhouse的函数
 static inline __jh_arg jailhouse_call(__jh_arg num)
 {
 	register __jh_arg num_result asm(JAILHOUSE_CALL_NUM_RESULT) = num;
@@ -69,6 +70,7 @@ static inline __jh_arg jailhouse_call(__jh_arg num)
 	return num_result;
 }
 
+// 调用Jailhouse的函数，并传递一个参数
 static inline __jh_arg jailhouse_call_arg1(__jh_arg num, __jh_arg arg1)
 {
 	register __jh_arg num_result asm(JAILHOUSE_CALL_NUM_RESULT) = num;
@@ -81,6 +83,7 @@ static inline __jh_arg jailhouse_call_arg1(__jh_arg num, __jh_arg arg1)
 	return num_result;
 }
 
+// 调用Jailhouse的函数，并传递两个参数
 static inline __jh_arg jailhouse_call_arg2(__jh_arg num, __jh_arg arg1,
 					   __jh_arg arg2)
 {
@@ -95,6 +98,7 @@ static inline __jh_arg jailhouse_call_arg2(__jh_arg num, __jh_arg arg1,
 	return num_result;
 }
 
+// 向cell发送消息
 static inline void
 jailhouse_send_msg_to_cell(struct jailhouse_comm_region *comm_region,
 			   __jh_arg msg)
@@ -105,6 +109,7 @@ jailhouse_send_msg_to_cell(struct jailhouse_comm_region *comm_region,
 	comm_region->msg_to_cell = msg;
 }
 
+// 向cell发送回复
 static inline void
 jailhouse_send_reply_from_cell(struct jailhouse_comm_region *comm_region,
 			       __jh_arg reply)
